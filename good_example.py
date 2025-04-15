@@ -22,10 +22,7 @@ black_box = Fernet(key)
 with open("EXAMPLES.md", "rb") as f:
     plaintext = f.read()
 
-# we don't want to reveal when we last accessed the log, so we use a dummy time
-# not sure if this is required by our spec but it doesn't seem to hurt, according
-# to the fernet spec the timestamp is just extra info for convenience
-ciphertext = black_box.encrypt_at_time(plaintext, current_time=0)
+ciphertext = black_box.encrypt(plaintext)
 # can write this to a file, re-read it back, whatever
 plaintext_new = black_box.decrypt(ciphertext)
 
