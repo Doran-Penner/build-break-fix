@@ -7,3 +7,4 @@ venv/
 .DS_STORE
 __MACOSX/
 salt
+logfile
