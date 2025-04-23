@@ -1,6 +1,5 @@
 import os
-import base64
-from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import pickle
@@ -55,16 +54,16 @@ class Event:
     __repr__ = __str__
 
 
-def get_salt_path(log_file: str) -> str:
-    salt_file = os.path.dirname(log_file)
-    if salt_file == "":
-        salt_file = "."
-    salt_file += "/salt"
-    return salt_file
+def get_adj_path(name: str, log_file: str) -> str:
+    adj_file = os.path.dirname(log_file)
+    if adj_file == "":
+        adj_file = "."
+    adj_file += "/" + name
+    return adj_file
 
 
 def get_salt(log_file: str) -> bytes:
-    salt_file = get_salt_path(log_file)
+    salt_file = get_adj_path("salt", log_file)
     if os.path.exists(salt_file):
         with open(salt_file, "rb") as f:
             # NOTE: we explicitly do not use pickle on the salt file,
@@ -72,46 +71,60 @@ def get_salt(log_file: str) -> bytes:
             salt = f.read()
     else:
         salt = os.urandom(16)
-
     return salt
 
 
-def save_salt(salt: bytes, log_file: str):
-    salt_file = get_salt_path(log_file)
-    with open(salt_file, "wb") as f:
-        f.write(salt)
+def get_nonce(log_file: str, decrypting: bool) -> bytes:
+    file_path = get_adj_path("nonce", log_file)
+    if os.path.exists(file_path) and decrypting:
+        with open(file_path, "rb") as f:
+            nonce = f.read()
+    else:
+        nonce = os.urandom(12)
+    return nonce
+
+
+def save_adj(name: str, val: bytes, log_file: str):
+    file_path = get_adj_path(name, log_file)
+    with open(file_path, "wb") as f:
+        f.write(val)
 
 
 # <https://cryptography.io/en/latest/fernet/#using-passwords-with-fernet>
-def get_black_box(password: str, salt: bytes) -> Fernet:
+def get_black_box(password: str, salt: bytes) -> ChaCha20Poly1305:
     kdf = PBKDF2HMAC(
         algorithm=SHA256(),
         length=32,
         salt=salt,
         iterations=1_000_000,
     )
-    key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
-    return Fernet(key)
+    key = kdf.derive(password.encode())
+    return ChaCha20Poly1305(key)
 
 
 def load_all(password: str, log_file: str) -> list[Event]:
     if os.path.exists(log_file):
         salt = get_salt(log_file)
+        nonce = get_nonce(log_file, True)
         black_box = get_black_box(password, salt)
         with open(log_file, "rb") as f:
             ciphertext = f.read()
-        return pickle.loads(black_box.decrypt(ciphertext))
+        return pickle.loads(black_box.decrypt(nonce, ciphertext, None))
     else:
         return []
 
 
 def save_all(log: list[Event], password: str, log_file: str):
     salt = get_salt(log_file)
+    nonce = get_nonce(log_file, False)
     black_box = get_black_box(password, salt)
-    enc_log = black_box.encrypt(pickle.dumps(log))
+    # ideally we save the nonce and salt as added & auth'd data via chachapoly
+    # but I can't figure out how to read that so we'll do the normal thing
+    enc_log = black_box.encrypt(nonce, pickle.dumps(log), None)
     with open(log_file, "wb") as f:
         f.write(enc_log)
-    save_salt(salt, log_file)
+    save_adj("salt", salt, log_file)
+    save_adj("nonce", nonce, log_file)
 
 
 # log: list[Event] = load_all("sekwet pasword :3", "./logfile")
