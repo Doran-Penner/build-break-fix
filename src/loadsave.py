@@ -4,6 +4,8 @@ from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import pickle
 import typing
+import math
+import random
 
 
 """
@@ -82,6 +84,8 @@ def load_all(password: str, log_file: str) -> tuple[list[Event], bytes]:
         ciphertext = ciphertext[: -(SALT_LENGTH + NONCE_LENGTH)]
         black_box = get_black_box(password, salt)
         log = pickle.loads(black_box.decrypt(nonce, ciphertext, None))
+        # remove random Nones
+        log = [event for event in log if event is not None]
     else:
         log = []
         salt = os.urandom(SALT_LENGTH)
@@ -92,6 +96,9 @@ def load_all(password: str, log_file: str) -> tuple[list[Event], bytes]:
 
 
 def save_all(log: list[Event], salt: bytes, password: str, log_file: str):
+    # add a bunch of Nones to hide length:
+    # they still technically get some info but it's not much
+    log.extend(None for _ in range(max(math.floor(random.gauss(400, 100)), 0)))
     nonce = os.urandom(12)
     black_box = get_black_box(password, salt)
     enc_log = black_box.encrypt(nonce, pickle.dumps(log), None)
