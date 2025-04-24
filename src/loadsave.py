@@ -1,7 +1,9 @@
 import os
+import sys
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.exceptions import UnsupportedAlgorithm, InvalidTag
 import pickle
 import typing
 import math
@@ -72,7 +74,11 @@ def get_black_box(password: str, salt: bytes) -> ChaCha20Poly1305:
         iterations=1_000_000,
     )
     key = kdf.derive(password.encode())
-    return ChaCha20Poly1305(key)
+    try:
+        return ChaCha20Poly1305(key)
+    except UnsupportedAlgorithm:
+        print("Oh no! Your OpenSSL version doesn't support chacha20-poly1305 :(")
+        sys.exit(255)
 
 
 def load_all(password: str, log_file: str) -> tuple[list[Event], bytes]:
@@ -83,7 +89,12 @@ def load_all(password: str, log_file: str) -> tuple[list[Event], bytes]:
         nonce = ciphertext[-(NONCE_LENGTH):]
         ciphertext = ciphertext[: -(SALT_LENGTH + NONCE_LENGTH)]
         black_box = get_black_box(password, salt)
-        log = pickle.loads(black_box.decrypt(nonce, ciphertext, None))
+        try:
+            bin_data = black_box.decrypt(nonce, ciphertext, None)
+        except InvalidTag:
+            print("invalid")
+            sys.exit(255)
+        log = pickle.loads(bin_data)
         # remove random Nones
         log = [event for event in log if event is not None]
     else:

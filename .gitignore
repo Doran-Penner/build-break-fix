@@ -8,3 +8,4 @@ venv/
 __MACOSX/
 salt
 logfile
+__pycache__/
