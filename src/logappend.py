@@ -54,7 +54,7 @@ def parse_args(args = None):
             with open(parsed_args.batch_file, 'r') as f:
                 batch_commands = [line.strip() for line in f if line.strip()]
         except IOError:
-            print("invalid", file=sys.stdout)
+            print("invalid")
             sys.exit(255)
         
         batch_results = []
@@ -62,6 +62,9 @@ def parse_args(args = None):
             try:
                 # Recursively parse each command in the batch file
                 cmd_args = shlex.split(cmd)
+                if '-B' in cmd_args:
+                    print("invalid")
+                    sys.exit(255)
                 result = parse_args(cmd_args)
                 batch_results.append(result)
             except SystemExit:
@@ -72,7 +75,6 @@ def parse_args(args = None):
 
     # Validate single command mode
     errors = []
-    
     # Required arguments
     if not parsed_args.timestamp:
         errors.append("Missing required argument: -T timestamp")
@@ -119,9 +121,8 @@ def parse_args(args = None):
                     errors.append("Room ID must be between 0 and 1,073,741,823")
             except ValueError:
                 errors.append("Room ID must be a valid integer")
-    
     if errors:
-        print("invalid", file=sys.stdout)
+        print("invalid")
         sys.exit(255)
 
     result = {
@@ -141,7 +142,6 @@ def parse_args(args = None):
 def append(new_event, log_file, key):
     #get the log and check against the new event
     log, salt = load_all(key, log_file)
-
     if len(log) != 0:
         #trying to add an event before/at the same time as an existing one
         if log[-1].time >= new_event.time:
@@ -151,16 +151,73 @@ def append(new_event, log_file, key):
         for event in reversed(log):
                 #checking against each event including the person in new_event
                 if event.name == new_event.name and event.employee == new_event.employee:
-                    #checks that new arrivals aren't already there
-                    if new_event.arrive == True and event.arrive != False:
-                        if new_event.room != None and event.room == None:
-                            break
+                    #checks for attempting to enter a room or the gallery
+                    if new_event.arrive == True:
+                        if new_event.room == None:
+                            if event.arrive == False and event.room == None:
+                                #entered gallery after leaving it
+                                break
+                            else:
+                                #tried to enter gallery while not being outside it
+                                raise ValueError("Invalid")
                         else:
-                            raise ValueError("Invalid")
-                    #check that they haven't already left
-                    if event.arrive==False and event.arrive==False:
-                        raise ValueError("Invalid")
-                    #need to fix this so that leaving follows arrival in the same room, and the arriving follows departing a room
+                            if event.arrive == True:
+                                if event.room == None:
+                                    #entering a room after entering the gallery
+                                    break
+                                else:
+                                    #tried to enter a room while already in a room
+                                    raise ValueError("Invalid")
+                            else:
+                                if event.room == None:
+                                    #tried to enter a room after leaving gallery
+                                    raise ValueError("Invalid")
+                                else:
+                                    #entering a room after leaving a room
+                                    break
+
+                    #checks for trying to leave a room/ the gallery
+                    else:
+                        if new_event.room == None:
+                            if event.arrive == False:
+                                if event.room == None:
+                                    #tried to leave gallery after leaving gallery
+                                    raise ValueError("Invalid")
+                                else:
+                                    #leaving gallery after leaving a room
+                                    break
+                            else:
+                                if event.room == None:
+                                    #leaving gallery after entering a room
+                                    break
+                                else:
+                                    #tried to leave the gallery after entering a room
+                                    raise ValueError("invalid")
+                        else:
+                            if event.arrive == True and event.room == new_event.room:
+                                #leaving room after entering room
+                                break
+                            else:
+                                #trying to leave a room that was not just entered
+                                raise ValueError("invalid")
+
+
+                    # #checks that new arrivals aren't already there
+                    # if new_event.arrive == True and event.arrive == True:
+                    #     if new_event.room != None and event.room == None:
+                    #         print("test1")
+                    #         break
+                    #     else:
+                    #         print("test2")
+                    #         raise ValueError("Invalid")
+                    # #check that they haven't already left, you can only leave the gallery if you leave the room first
+                    # if (new_event.arrive==False and event.arrive==False):
+                    #     if not(new_event.room == None and event.room != None):
+                    #         print("test3")
+                    #         raise ValueError("Invalid")
+                    # #need to fix this so that leaving follows arrival in the same room, and the arriving follows departing a room
+                
+
                 break
 
     #add the new event now that we know it's valid
@@ -176,11 +233,12 @@ def main():
         if isinstance(parsed_args, list):
             for result in parsed_args:
                 new_event = Event(result['time'], result['employee'], result['name'], result['arrive'], result['room'])
-                append(new_event, result['log'], result['key'])
-                
+                #print(new_event)
+                append(new_event, result['log'], result['key'])   
 
         else:
             new_event = Event(parsed_args['time'], parsed_args['employee'], parsed_args['name'], parsed_args['arrive'], parsed_args['room'])
+            #print(new_event)
             append(new_event, parsed_args['log'], parsed_args['key'])
 
 
